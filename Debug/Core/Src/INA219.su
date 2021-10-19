@@ -1,0 +1,17 @@
+INA219.c:38:6:wireWriteRegister	40	static
+INA219.c:52:6:wireReadRegister	40	static
+INA219.c:70:6:setCalibration_32V_2A	16	static
+INA219.c:161:6:setCalibration_32V_1A	16	static
+INA219.c:251:6:setCalibration_16V_400mA	16	static
+INA219.c:343:9:getBusVoltage_raw	16	static
+INA219.c:357:9:getShuntVoltage_raw	16	static
+INA219.c:369:9:getCurrent_raw	16	static
+INA219.c:390:9:getPower_raw	16	static
+INA219.c:411:7:getShuntVoltage_mV	16	static
+INA219.c:423:7:getBusVoltage_V	16	static
+INA219.c:435:7:getCurrent_mA	16	static
+INA219.c:448:7:getPower_mW	16	static
+INA219.c:459:5:contMeasureInit	32	static
+INA219.c:479:5:contMeasureUpdate	24	static
+INA219.c:500:7:convertMeasure	24	static
+INA219.c:532:5:getNSamples	4	static

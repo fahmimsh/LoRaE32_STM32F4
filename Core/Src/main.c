@@ -26,8 +26,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #include "math.h"
+#include "INA219.h"
+#include "retarget.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,16 +48,26 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
+RTC_HandleTypeDef hrtc;
+
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
-#define RxBuf_SIZE	  100
-#define MainBuf_SIZE 200
-
+//serial 2
+#define RxBuf_SIZE	  1024
+#define MainBuf_SIZE  1024
 uint8_t RxBuf[RxBuf_SIZE];
 uint8_t MainBuf[MainBuf_SIZE];
+//serial 3
+uint8_t MainBuf_3[MainBuf_SIZE] = { 0 };
+uint8_t RxBuf_3[RxBuf_SIZE] = { 0 };
+bool usart_3_state = false;
 
 //serial komunikasi
 uint8_t buff_s[200];
@@ -62,8 +75,35 @@ uint16_t ukuranstring;
 char buffer[5];
 uint16_t oldPos = 0;
 uint16_t newPos = 0;
-
-
+uint16_t oldPos_3 = 0;
+uint16_t newPos_3 = 0;
+//waktu millis second
+char jam, menit, detik;
+char tanggal, bulan, tahun;
+unsigned long rtc_millis = 0;
+unsigned long ina219_millis = 0;
+unsigned long led_prev_on = 0;
+unsigned long led_loop_on = 0;
+//deklarasi Sensor Tegangan dan Arus
+float tegangan = 0.0;
+float Vshunt = 0.0;
+float arus = 0.0;
+float batteryPercentage = 0.0;
+//deklarasi keypad
+GPIO_InitTypeDef GPIO_InitStructPrivate = {0};
+uint32_t previousMillis = 0;
+uint32_t currentMillis = 0;
+uint8_t keyPressed = 0;
+uint8_t keyPressed_prev = 0;
+uint8_t counter = 0;
+char keypad = 0; char key[5] = {0};
+bool key_kondisi = false;
+//deklarasi LED
+bool led_hijau_kuning = 1;
+bool led_merah = 0;
+//deklarasi GPS
+float lon_gps, lat_gps;
+char lat[20], lat_a, lon[20], lon_a;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -72,13 +112,80 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_RTC_Init(void);
+static void MX_I2C1_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/**Fungsi ini digunakan untuk set timer jika dibutuhkan untuk set rtc
+  */
+void set_time(void){
+	  RTC_TimeTypeDef sTime = {0};
+	  RTC_DateTypeDef sDate = {0};
+	  /** Initialize RTC and set the Time and Date
+	  */
+	  sTime.Hours = 0x10;
+	  sTime.Minutes = 0x1;
+	  sTime.Seconds = 0x0;
+	  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+	  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+	  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+	  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+	  sDate.Month = RTC_MONTH_OCTOBER;
+	  sDate.Date = 0x18;
+	  sDate.Year = 0x21;
 
+	  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+	  /* USER CODE BEGIN RTC_Init 2 */
+	  HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, 0x32F2);
+	  /* USER CODE END RTC_Init 2 */
+
+}
+/**Fungsi ini digunakan untuk membaca interanal RTC
+  */
+void get_time(void)
+{
+	if (HAL_GetTick() - rtc_millis >= 500){
+		rtc_millis = HAL_GetTick();
+		 RTC_DateTypeDef gDate;
+		 RTC_TimeTypeDef gTime;
+		 HAL_RTC_GetTime(&hrtc, &gTime, RTC_FORMAT_BIN);
+		 HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
+		 jam = gTime.Hours; menit = gTime.Minutes; detik = gTime.Seconds;
+		 tanggal = gDate.Date; bulan = gDate.Month; tahun = gDate.Year;
+		 //printf("%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun);
+	}
+}
+/**Fungsi ini digunakan untuk membaca baterai
+  */
+void get_ampere_volt(void){
+	setCalibration_16V_400mA();
+	tegangan = getBusVoltage_V();
+	Vshunt = getPower_mW();
+	arus = getCurrent_mA() * (-1);
+	float maxVoltage = 12.4;
+	float minVoltage = 11.2;
+	batteryPercentage = (tegangan - minVoltage) / (maxVoltage - minVoltage) * 100;
+	if (batteryPercentage > 100) batteryPercentage = 100;
+	else if (batteryPercentage < 0) batteryPercentage = 0;
+	if (HAL_GetTick() - ina219_millis >= 500){
+		ina219_millis = HAL_GetTick();
+		//printf("Vbus: %.1f V| persen: %.1f percent | Ampere: %.1f mA\r\n",tegangan, batteryPercentage, arus);
+	}
+}
+void get_keypad(uint8_t keypadin);
+void get_gps(char *data_gps);
+void led_reaction(uint16_t led_time, uint16_t time_loop);
 /* USER CODE END 0 */
 
 /**
@@ -112,12 +219,33 @@ int main(void)
   MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
+  MX_RTC_Init();
+  MX_I2C1_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  RetargetInit(&huart1);
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RxBuf, RxBuf_SIZE);
   __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, RxBuf_3, RxBuf_SIZE);
+  __HAL_DMA_DISABLE_IT(&hdma_usart3_rx, DMA_IT_HT);
   //set m0 m1
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_2, 0);
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_3, 0);
+  if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) != 0x32F2){
+	  set_time();
+  }
+  //begin keypad
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, 1);
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_5, 1);
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, 1);
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, 1);
+  //Millis second set
+  rtc_millis = HAL_GetTick();
+  ina219_millis = HAL_GetTick();
+  //kirim data dummy  *node,lat,long,data,jam, menit, detik, tegangan
+  ukuranstring = sprintf((char*)buff_s, "*A,latitude,longitude,data,jam,menit,detik,baterai\r\n");
+  HAL_UART_Transmit(&huart2, buff_s, ukuranstring, 100);
+  led_reaction(100, 600);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -127,10 +255,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-//	  ukuranstring = sprintf((char*)buff_s, "Solar\r\n");
-//	  HAL_UART_Transmit(&huart1, buff_s, ukuranstring, 10);
-	  HAL_Delay(1000);
+	  get_time();
+	  get_keypad(keyPressed);
+	  get_ampere_volt();
+	  get_gps(MainBuf_3);
+	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
   }
   /* USER CODE END 3 */
 }
@@ -143,6 +272,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
   */
@@ -151,8 +281,9 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
@@ -176,6 +307,108 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+	//JANGAN LUPA DIKOMEN YA
+  /* USER CODE END RTC_Init 0 */
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date
+  */
+  sTime.Hours = 0x11;
+  sTime.Minutes = 0x35;
+  sTime.Seconds = 0x5;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  sDate.Month = RTC_MONTH_OCTOBER;
+  sDate.Date = 0x18;
+  sDate.Year = 0x21;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+	  HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, 0x32F2);
+  /* USER CODE END RTC_Init 2 */
+
 }
 
 /**
@@ -245,6 +478,39 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 9600;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -254,6 +520,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
@@ -272,23 +541,60 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_2|GPIO_PIN_3, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PD2 PD3 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10|GPIO_PIN_12|GPIO_PIN_14, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PA1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PE10 PE12 PE14 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_12|GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PD4 PD5 PD6 PD7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : PB3 PB5 PB8 PB9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_5|GPIO_PIN_8|GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
+/**Fungsi ini digunakan untuk interrupt LoRa E32 jika ada data masuk
+  */
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
+	//variable parse
+	uint8_t new_Data[10];
+	//uint8_t prev_Data;
 	if (huart->Instance == USART2)
 	{
 		oldPos = newPos;  // Update the last position before copying new data
@@ -312,15 +618,291 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 		 */
 		else
 		{
-			memcpy ((uint8_t *)MainBuf+oldPos, RxBuf, Size);
+			memcpy ((uint8_t *)MainBuf+newPos, RxBuf, Size);
 			newPos = Size+oldPos;
 		}
 		/* start the DMA again */
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *) RxBuf, RxBuf_SIZE);
 		__HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
 
-		HAL_UART_Transmit(&huart1, MainBuf, Size, 100);
+		if(RxBuf_3[0] == '*'){ //*node,lat,long,data,jam, menit, detik, tegangan
+			new_Data[0] = MainBuf[1];
+			if (new_Data[0]){
+				HAL_UART_Transmit(&huart2, MainBuf, Size, 100);
+			}
+			//prev_Data = new_Data[0];
+		}
+		printf("%s", MainBuf);
+		led_reaction(100, 600);
+	}else if(huart->Instance == USART3){
+		oldPos_3 = newPos_3;
+		if (oldPos_3+Size > MainBuf_SIZE)  // If the current position + new data size is greater than the main buffer
+		{
+			uint16_t datatocopy_3 = MainBuf_SIZE-oldPos_3;  // find out how much space is left in the main buffer
+			memcpy ((uint8_t *)MainBuf_3+oldPos_3, RxBuf_3, datatocopy_3);  // copy data in that remaining space
+			oldPos_3 = 0;  // point to the start of the buffer
+			memcpy ((uint8_t *)MainBuf_3, (uint8_t *)RxBuf_3+datatocopy_3, (Size-datatocopy_3));  // copy the remaining data
+			newPos_3 = (Size-datatocopy_3);
+		}
+		else
+		{
+			memcpy ((uint8_t *)MainBuf+newPos_3, RxBuf_3, Size);
+			newPos_3 = Size+oldPos_3;
+		}
+		HAL_UARTEx_ReceiveToIdle_DMA(&huart3, (uint8_t *) RxBuf_3, RxBuf_SIZE);
+		__HAL_DMA_DISABLE_IT(&hdma_usart3_rx, DMA_IT_HT);
+		//printf("%s", MainBuf_3);
 	}
+}
+/**Fungsi ini digunakan untuk keypad untuk mengirim pesan dan juga di intrupsi jika ada data masuk dari keypad
+  */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  currentMillis = HAL_GetTick();
+  if (currentMillis - previousMillis > 10) {
+    /*Configure GPIO pins : PB3 PB5 PB8 PB9 to GPIO_INPUT*/
+    GPIO_InitStructPrivate.Pin = GPIO_PIN_3|GPIO_PIN_5|GPIO_PIN_8|GPIO_PIN_9;
+    GPIO_InitStructPrivate.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStructPrivate.Pull = GPIO_NOPULL;
+    GPIO_InitStructPrivate.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStructPrivate);
+
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, 1);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_5, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, 0);
+    if(GPIO_Pin == GPIO_PIN_3 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3))
+    {
+      keyPressed = 14; //ASCII value of D
+    }
+    else if(GPIO_Pin == GPIO_PIN_5 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5))
+    {
+      keyPressed = 13; //ASCII value of C
+    }
+    else if(GPIO_Pin == GPIO_PIN_8 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_8))
+    {
+      keyPressed = 12; //ASCII value of B
+    }
+    else if(GPIO_Pin == GPIO_PIN_9 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9))
+    {
+      keyPressed = 11; //ASCII value of A
+    }
+
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_5, 1);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, 0);
+
+    if(GPIO_Pin == GPIO_PIN_3 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3))
+    {
+      keyPressed = 15; //ASCII value of #
+    }
+    else if(GPIO_Pin == GPIO_PIN_5 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5))
+    {
+      keyPressed = 9; //ASCII value of 9
+    }
+    else if(GPIO_Pin == GPIO_PIN_8 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_8))
+    {
+      keyPressed = 6; //ASCII value of 6
+    }
+    else if(GPIO_Pin == GPIO_PIN_9 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9))
+    {
+      keyPressed = 3; //ASCII value of 3
+    }
+
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_5, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, 1);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, 0);
+    if(GPIO_Pin == GPIO_PIN_3 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3))
+    {
+      keyPressed = 16; //ASCII value of 0
+    }
+    else if(GPIO_Pin == GPIO_PIN_5 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5))
+    {
+      keyPressed = 8; //ASCII value of 8
+    }
+    else if(GPIO_Pin == GPIO_PIN_8 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_8))
+    {
+      keyPressed = 5; //ASCII value of 5
+    }
+    else if(GPIO_Pin == GPIO_PIN_9 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9))
+    {
+      keyPressed = 2; //ASCII value of 2
+    }
+
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_5, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, 0);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, 1);
+    if(GPIO_Pin == GPIO_PIN_3 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3))
+    {
+      keyPressed = 17; //ASCII value of *
+    }
+    else if(GPIO_Pin == GPIO_PIN_5 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5))
+    {
+      keyPressed = 7; //ASCII value of 7
+    }
+    else if(GPIO_Pin == GPIO_PIN_8 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_8))
+    {
+      keyPressed = 4; //ASCII value of 4
+    }
+    else if(GPIO_Pin == GPIO_PIN_9 && HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9))
+    {
+      keyPressed = 1; //ASCII value of 1
+    }
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, 1);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_5, 1);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, 1);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, 1);
+    /*Configure GPIO pins : PB6 PB7 PB8 PB9 back to EXTI*/
+    GPIO_InitStructPrivate.Mode = GPIO_MODE_IT_RISING;
+    GPIO_InitStructPrivate.Pull = GPIO_PULLDOWN;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStructPrivate);
+    //printf("nilai key pad %d\r\n", keyPressed);
+    previousMillis = currentMillis;
+    key_kondisi = true;
+  }
+}
+/**Fungsi ini digunakan untuk mendapatkan karakter dari nilai keypad yangdigunakan
+  */
+void get_keypad(uint8_t keypadin){
+	if(key_kondisi == true){
+		if(keypadin != keyPressed_prev || counter >= 5){
+	  	  counter = 0;
+	    }
+		if(keypadin == 1){
+			counter ++;
+			strcpy((uint8_t*)key, " 1abc");
+		     keypad = key[counter];
+		}else if(keypadin == 2){
+			counter ++;
+			strcpy((uint8_t*)key, " 2def");
+		     keypad = key[counter];
+		}else if(keypadin == 3){
+			counter ++;
+			strcpy((uint8_t*)key, " 3ghi");
+		     keypad = key[counter];
+		}else if(keypadin == 4){
+			counter ++;
+			strcpy((uint8_t*)key, " 4jkl");
+		     keypad = key[counter];
+		}else if(keypadin == 5){
+			counter ++;
+			strcpy((uint8_t*)key, " 5mno");
+		     keypad = key[counter];
+		}else if(keypadin == 6){
+			counter ++;
+			strcpy((uint8_t*)key, " 6pqr");
+		     keypad = key[counter];
+		}else if(keypadin == 7){
+			counter ++;
+			strcpy((uint8_t*)key, " 7stu");
+		     keypad = key[counter];
+		}else if(keypadin == 8){
+			counter ++;
+			strcpy((uint8_t*)key, " 8vwx");
+		     keypad = key[counter];
+		}else if(keypadin == 9){
+			counter ++;
+			strcpy((uint8_t*)key, " 4yz");
+		     keypad = key[counter];
+		}else if(keypadin == 11){
+			counter = 0;
+			strcpy((uint8_t*)key, "D"); //delete
+		     keypad = key[counter];
+		}else if(keypadin == 12){
+			counter = 0;
+			strcpy((uint8_t*)key, "O"); //oke / KIRIM
+		     keypad = key[counter];
+		}else if(keypadin == 13){
+			counter = 0;
+			strcpy((uint8_t*)key, " "); //spasi
+		     keypad = key[counter];
+		}
+		printf("key %c\r\n", keypad);
+		keyPressed_prev = keypadin;
+		key_kondisi = false;
+		led_reaction(100,100);
+	  }
+}
+/**Fungsi ini LED Blink untuk indikasi
+  */
+void led_reaction(uint16_t led_time, uint16_t time_loop){
+	led_loop_on = HAL_GetTick();
+	while ((unsigned long)HAL_GetTick() - led_loop_on <= time_loop){
+		if (HAL_GetTick() - led_prev_on >= led_time){
+			led_prev_on = HAL_GetTick();
+			if (led_hijau_kuning == 0){
+				led_hijau_kuning = 1;
+			} else {
+				led_hijau_kuning = 0;
+			}
+			if (led_merah == 0){
+				led_merah = 1;
+			} else {
+				led_merah = 0;
+			}
+			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, led_hijau_kuning);
+			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_12, led_merah);
+			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_14, led_hijau_kuning);
+		}
+	}
+}
+/**Fungsi ini untuk memparsing data GPS yaitu latitude longitude digunakan untuk melihat lokaasi alat
+  */
+void get_gps(char *data_gps){
+	if (usart_3_state == true){
+		printf("%s", data_gps);
+/*		  char *pointer;
+		  int length = sizeof(data_gps);
+
+		  memset(lat, '\0', 20);
+		  memset(lon, '\0', 20) ;
+		  pointer = strchr((char*)data_gps, '$');
+
+		  do{
+			  char *ptrstart;
+			  char *ptrend;
+			  if(strncmp(pointer, "$GNGGA" , 6) == 0){ //$GNGGA
+				  ptrstart = (char*)memchr(pointer + 1, ',', length);
+				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
+				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  } else if(strncmp(pointer, "$GNGLL", 6) == 0){ //$GNGLL
+				  ptrstart = (char*)memchr(pointer + 1, ',', length);
+				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  } else if(strncmp(pointer, "$GNRMC", 6) == 0){
+				  ptrstart = (char*)memchr(pointer + 1, ',', length);
+				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
+				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
+				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  } else {
+				  pointer = strchr(pointer + 6, '$');
+				  continue;
+			  }
+
+			  for(int i = 1; i < (ptrend - ptrstart); i++) lat[i - 1] = ptrstart[i];
+			  lat_a = *(ptrend + 1);
+
+			  ptrstart = (char*)memchr(ptrend + 1, ',', length);
+			  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  for(int i = 1; i < (ptrend - ptrstart); i++) lon[i - 1] = ptrstart[i];
+			  lon_a = *(ptrend + 1);
+			  if(lon[0] != '\0' && lat[0] != '\0'){
+				  printf("Lat: %s | %c\tLon: %s | %c\r\n", lat, lat_a, lon, lon_a);
+				  lat_gps = atof((char*)lat);
+				  lon_gps = atof((char*)lon);
+				  break;
+			  }
+			  pointer = strchr(pointer + 4, '$');
+		  }
+		  while(pointer != NULL);*/
+		  usart_3_state = false;
+	  }
 }
 /* USER CODE END 4 */
 
