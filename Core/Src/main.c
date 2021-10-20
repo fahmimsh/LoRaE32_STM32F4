@@ -31,6 +31,8 @@
 #include "math.h"
 #include "INA219.h"
 #include "retarget.h"
+#include "ILI9341_STM32_Driver.h"
+#include "ILI9341_GFX.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,6 +53,9 @@
 I2C_HandleTypeDef hi2c1;
 
 RTC_HandleTypeDef hrtc;
+
+SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_tx;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -89,6 +94,7 @@ float tegangan = 0.0;
 float Vshunt = 0.0;
 float arus = 0.0;
 float batteryPercentage = 0.0;
+char volt[50], persen[50], amper[50];
 //deklarasi keypad
 GPIO_InitTypeDef GPIO_InitStructPrivate = {0};
 uint32_t previousMillis = 0;
@@ -104,6 +110,9 @@ bool led_merah = 0;
 //deklarasi GPS
 float lon_gps, lat_gps;
 char lat[20], lat_a, lon[20], lon_a;
+char data_lat[20], data_lng[20];
+//deklarasi LCD
+char data[] = "HELLO WORLD \r\n";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -115,6 +124,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -151,6 +161,48 @@ void set_time(void){
 	  /* USER CODE END RTC_Init 2 */
 
 }
+/**Fungsi ini digunakan untuk LCD*/
+
+void getLCD(char *data_lat,char *data_lng, char *volt, char *amper, char *persen)
+{
+	  ILI9341_DrawVLine(0, 0, 320, DARKGREEN);
+	  ILI9341_DrawVLine(2, 0, 320, DARKGREEN);
+	  ILI9341_DrawText("17-10-2021", FONT3, 9, 8, WHITE, BLACK);
+	  ILI9341_DrawText("17:04:00", FONT3, 90, 8, WHITE, BLACK);
+	  ILI9341_DrawRectangle(190, 4, 8, 20, GREENYELLOW);
+	  ILI9341_DrawRectangle(200, 4, 8, 20, GREENYELLOW);
+	  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
+	  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
+	  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+	  ILI9341_DrawVLine(237, 0, 320, DARKGREEN);
+	  ILI9341_DrawVLine(239, 0, 320, DARKGREEN);
+	  ILI9341_DrawHLine(0, 30, 240, DARKGREEN);
+	  ILI9341_DrawHLine(0, 32, 240, DARKGREEN);
+	  ILI9341_DrawText("ID NODE : A", FONT3, 9, 40, WHITE, BLACK);
+	  ILI9341_DrawText(volt, FONT3, 120, 40, WHITE, BLACK);
+	  ILI9341_DrawText(amper, FONT3, 180, 40, WHITE, BLACK);
+	  ILI9341_DrawHLine(0, 60, 240, DARKGREEN);
+	  ILI9341_DrawHLine(0, 62, 240, DARKGREEN);
+	  ILI9341_DrawText("Masukkan Pesan yang anda kirim : ", FONT2, 9, 70, WHITE, BLACK);
+	  ILI9341_DrawHLine(0, 85, 240, DARKGREEN);
+	  ILI9341_DrawHLine(0, 87, 240, DARKGREEN);
+	  ILI9341_DrawText("Ini Pesan Anda", FONT2, 9, 95, WHITE, BLACK);
+	  ILI9341_DrawHLine(0, 150, 240, DARKGREEN);
+	  ILI9341_DrawHLine(0, 152, 240, DARKGREEN);
+	  ILI9341_DrawText("Anda Menerima Pesan : ", FONT2, 9, 160, WHITE, BLACK);
+	  ILI9341_DrawText("Ini Pesan dia", FONT2, 9, 175, WHITE, BLACK);
+	  ILI9341_DrawHLine(0, 245, 240, DARKGREEN);
+	  ILI9341_DrawHLine(0, 247, 240, DARKGREEN);
+	  ILI9341_DrawText("Lokasi   : ", FONT2, 9, 255, WHITE, BLACK);
+	  ILI9341_DrawText("Latitude : ", FONT2, 9, 270, WHITE, BLACK);
+	  ILI9341_DrawText(data_lat, FONT2, 75, 270, WHITE, BLACK);
+	  ILI9341_DrawText("Longitude : ", FONT2, 9, 285, WHITE, BLACK);
+	  ILI9341_DrawText(data_lng, FONT2, 75, 285, WHITE, BLACK);
+	  ILI9341_DrawHLine(0, 300, 240, DARKGREEN);
+	  ILI9341_DrawHLine(0, 300, 240, DARKGREEN);
+	  ILI9341_DrawText("Copyright : www.pens.ac.id", FONT2, 30, 305, WHITE, BLACK);
+}
+
 /**Fungsi ini digunakan untuk membaca interanal RTC
   */
 void get_time(void)
@@ -180,11 +232,15 @@ void get_ampere_volt(void){
 	else if (batteryPercentage < 0) batteryPercentage = 0;
 	if (HAL_GetTick() - ina219_millis >= 500){
 		ina219_millis = HAL_GetTick();
-		//printf("Vbus: %.1f V| persen: %.1f percent | Ampere: %.1f mA\r\n",tegangan, batteryPercentage, arus);
+//		printf("Vbus: %.1f V| persen: %.1f percent | Ampere: %.1f mA\r\n",tegangan, batteryPercentage, arus);
+		sprintf(volt, "%.4g", tegangan);
+		sprintf(amper, "%.5g", arus);
+		sprintf(persen, "%.2g", batteryPercentage);
+//
 	}
 }
 void get_keypad(uint8_t keypadin);
-void get_gps(char *data_gps);
+void get_gps();
 void led_reaction(uint16_t led_time, uint16_t time_loop);
 /* USER CODE END 0 */
 
@@ -222,6 +278,7 @@ int main(void)
   MX_RTC_Init();
   MX_I2C1_Init();
   MX_USART3_UART_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   RetargetInit(&huart1);
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RxBuf, RxBuf_SIZE);
@@ -234,6 +291,11 @@ int main(void)
   if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) != 0x32F2){
 	  set_time();
   }
+  //begin LCD
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, 1);
+  ILI9341_Init();
+  ILI9341_FillScreen(BLACK);
+  ILI9341_SetRotation(SCREEN_VERTICAL_2);
   //begin keypad
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, 1);
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_5, 1);
@@ -255,11 +317,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  get_time();
-	  get_keypad(keyPressed);
+	  //get_time();
+//	  get_keypad(keyPressed);
 	  get_ampere_volt();
-	  get_gps(MainBuf_3);
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
+	  getLCD(lat, lon, volt, amper, strcat(persen, "%"));
+	  printf("%s", lat);
+	  get_gps();
+//	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
   }
   /* USER CODE END 3 */
 }
@@ -412,6 +476,44 @@ static void MX_RTC_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -518,6 +620,7 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
   /* DMA1_Stream1_IRQn interrupt configuration */
@@ -526,6 +629,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA2_Stream3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
 
 }
 
@@ -540,29 +646,43 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_2|GPIO_PIN_4, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10|GPIO_PIN_12|GPIO_PIN_14, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|GPIO_PIN_1, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_12|GPIO_PIN_14
+                          |GPIO_PIN_15, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PA1 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  /*Configure GPIO pins : PC0 PC2 PC4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_2|GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA0 PA1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PE10 PE12 PE14 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_12|GPIO_PIN_14;
+  /*Configure GPIO pins : PE9 PE10 PE12 PE14
+                           PE15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_12|GPIO_PIN_14
+                          |GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -651,7 +771,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 		}
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart3, (uint8_t *) RxBuf_3, RxBuf_SIZE);
 		__HAL_DMA_DISABLE_IT(&hdma_usart3_rx, DMA_IT_HT);
-		//printf("%s", MainBuf_3);
+//		printf("%s", MainBuf_3); //gpsdata
+		usart_3_state = true;
 	}
 }
 /**Fungsi ini digunakan untuk keypad untuk mengirim pesan dan juga di intrupsi jika ada data masuk dari keypad
@@ -851,15 +972,17 @@ void led_reaction(uint16_t led_time, uint16_t time_loop){
 }
 /**Fungsi ini untuk memparsing data GPS yaitu latitude longitude digunakan untuk melihat lokaasi alat
   */
-void get_gps(char *data_gps){
+void get_gps(){
 	if (usart_3_state == true){
-		printf("%s", data_gps);
-/*		  char *pointer;
-		  int length = sizeof(data_gps);
+		//printf("%s", MainBuf_3);
+//		printf("7.12122");
+//		printf("test");
+	  char *pointer;
+		  int length = sizeof(MainBuf_3);
 
 		  memset(lat, '\0', 20);
 		  memset(lon, '\0', 20) ;
-		  pointer = strchr((char*)data_gps, '$');
+		  pointer = strchr((char*)MainBuf_3, '$');
 
 		  do{
 			  char *ptrstart;
@@ -880,6 +1003,7 @@ void get_gps(char *data_gps){
 				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
 
 			  } else {
+
 				  pointer = strchr(pointer + 6, '$');
 				  continue;
 			  }
@@ -896,13 +1020,21 @@ void get_gps(char *data_gps){
 				  printf("Lat: %s | %c\tLon: %s | %c\r\n", lat, lat_a, lon, lon_a);
 				  lat_gps = atof((char*)lat);
 				  lon_gps = atof((char*)lon);
+				  sprintf(lat, "%g", lat_gps);
+				  sprintf(lon, "%g", lon_gps);
 				  break;
 			  }
+
 			  pointer = strchr(pointer + 4, '$');
 		  }
-		  while(pointer != NULL);*/
+		  while(pointer != NULL);
 		  usart_3_state = false;
 	  }
+			else
+			  {
+				  sprintf(lat, "%g", -7.122323);
+				  sprintf(lon, "%g", 122.32312);
+			  }
 }
 /* USER CODE END 4 */
 
