@@ -85,6 +85,7 @@ uint16_t newPos_3 = 0;
 //waktu millis second
 char jam, menit, detik;
 char tanggal, bulan, tahun;
+char gabungtanggal[50];
 unsigned long rtc_millis = 0;
 unsigned long ina219_millis = 0;
 unsigned long led_prev_on = 0;
@@ -163,12 +164,11 @@ void set_time(void){
 }
 /**Fungsi ini digunakan untuk LCD*/
 
-void getLCD(char *data_lat,char *data_lng, char *volt, char *amper, char *persen)
+void getLCD(char *data_lat,char *data_lng, char *volt, char *amper, char *persen, char *gabungtanggal)
 {
 	  ILI9341_DrawVLine(0, 0, 320, DARKGREEN);
 	  ILI9341_DrawVLine(2, 0, 320, DARKGREEN);
-	  ILI9341_DrawText("17-10-2021", FONT3, 9, 8, WHITE, BLACK);
-	  ILI9341_DrawText("17:04:00", FONT3, 90, 8, WHITE, BLACK);
+	  ILI9341_DrawText(gabungtanggal, FONT3, 9, 8, WHITE, BLACK);
 	  ILI9341_DrawRectangle(190, 4, 8, 20, GREENYELLOW);
 	  ILI9341_DrawRectangle(200, 4, 8, 20, GREENYELLOW);
 	  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
@@ -215,7 +215,7 @@ void get_time(void)
 		 HAL_RTC_GetDate(&hrtc, &gDate, RTC_FORMAT_BIN);
 		 jam = gTime.Hours; menit = gTime.Minutes; detik = gTime.Seconds;
 		 tanggal = gDate.Date; bulan = gDate.Month; tahun = gDate.Year;
-		 //printf("%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun);
+//		 printf("%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun);
 	}
 }
 /**Fungsi ini digunakan untuk membaca baterai
@@ -317,11 +317,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  //get_time();
+	  get_time();
 //	  get_keypad(keyPressed);
 	  get_ampere_volt();
-	  getLCD(lat, lon, volt, amper, strcat(persen, "%"));
-	  printf("%s", lat);
+//	  jam, menit, detik,tanggal, bulan, 2000 + tahun
+	  snprintf( gabungtanggal, 50, "%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun );
+	  printf("%s\n", gabungtanggal);
+	  getLCD(lat, lon, volt, amper, strcat(persen, "%"),gabungtanggal);
+//	  printf("%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun);
+//	  printf("%s", lat);
 	  get_gps();
 //	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
   }
