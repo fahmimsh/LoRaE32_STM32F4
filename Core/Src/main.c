@@ -109,7 +109,7 @@ bool key_kondisi = false;
 bool led_hijau_kuning = 1;
 bool led_merah = 0;
 //deklarasi GPS
-float lon_gps, lat_gps;
+double lon_gps, lat_gps;
 char lat[20], lat_a, lon[20], lon_a;
 char data_lat[20], data_lng[20];
 //deklarasi LCD
