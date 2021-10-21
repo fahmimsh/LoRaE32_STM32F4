@@ -169,11 +169,37 @@ void getLCD(char *data_lat,char *data_lng, char *volt, char *amper, char *persen
 	  ILI9341_DrawVLine(0, 0, 320, DARKGREEN);
 	  ILI9341_DrawVLine(2, 0, 320, DARKGREEN);
 	  ILI9341_DrawText(gabungtanggal, FONT3, 9, 8, WHITE, BLACK);
-	  ILI9341_DrawRectangle(190, 4, 8, 20, GREENYELLOW);
-	  ILI9341_DrawRectangle(200, 4, 8, 20, GREENYELLOW);
-	  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
-	  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
-	  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+	  ILI9341_DrawText(persen, FONT3, 155, 8, WHITE, BLACK);
+	  if(atoi(persen) <= 100 && atoi(persen) >= 80)
+	  {
+		  ILI9341_DrawRectangle(190, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(200, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+	  }
+	  else if(atoi(persen) <= 60 && atoi(persen) >= 79)
+	  {
+		  ILI9341_DrawRectangle(200, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+	  }
+	  else if(atoi(persen) <= 60 && atoi(persen) >= 79)
+	  {
+		  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+	  }
+	  else if(atoi(persen) <= 60 && atoi(persen) >= 79)
+	  {
+		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+	  }
+	  else
+	  {
+		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+	  }
 	  ILI9341_DrawVLine(237, 0, 320, DARKGREEN);
 	  ILI9341_DrawVLine(239, 0, 320, DARKGREEN);
 	  ILI9341_DrawHLine(0, 30, 240, DARKGREEN);
@@ -318,12 +344,12 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  get_time();
-//	  get_keypad(keyPressed);
+	  get_keypad(keyPressed);
 	  get_ampere_volt();
 //	  jam, menit, detik,tanggal, bulan, 2000 + tahun
-	  snprintf( gabungtanggal, 50, "%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun );
-	  printf("%s\n", gabungtanggal);
-	  getLCD(lat, lon, volt, amper, strcat(persen, "%"),gabungtanggal);
+	  snprintf( gabungtanggal, 50, "%02d:%02d:%02d %02d-%02d-%2d",jam, menit, detik,tanggal, bulan, 2000 + tahun );
+//	  printf("%s\n", gabungtanggal);
+	  getLCD(lat, lon, volt, amper, persen,gabungtanggal);
 //	  printf("%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun);
 //	  printf("%s", lat);
 	  get_gps();
