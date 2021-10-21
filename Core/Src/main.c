@@ -987,7 +987,6 @@ void get_gps(){
 		  memset(lat, '\0', 20);
 		  memset(lon, '\0', 20) ;
 		  pointer = strchr((char*)MainBuf_3, '$');
-
 		  do{
 			  char *ptrstart;
 			  char *ptrend;
@@ -1000,14 +999,13 @@ void get_gps(){
 				  ptrstart = (char*)memchr(pointer + 1, ',', length);
 				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
 
-			  } else if(strncmp(pointer, "$GNRMC", 6) == 0){
+			  } else if(strncmp(pointer, "$GNRMC", 6) == 0){ //$GNRMC
 				  ptrstart = (char*)memchr(pointer + 1, ',', length);
 				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
 				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
 				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
 
 			  } else {
-
 				  pointer = strchr(pointer + 6, '$');
 				  continue;
 			  }
