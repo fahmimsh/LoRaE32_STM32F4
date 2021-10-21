@@ -981,7 +981,7 @@ void get_gps(){
 		//printf("%s", MainBuf_3);
 //		printf("7.12122");
 //		printf("test");
-	  char *pointer;
+	  char *pointer; char *conv;
 		  int length = sizeof(MainBuf_3);
 
 		  memset(lat, '\0', 20);
@@ -1020,10 +1020,13 @@ void get_gps(){
 			  lon_a = *(ptrend + 1);
 			  if(lon[0] != '\0' && lat[0] != '\0'){
 				  printf("Lat: %s | %c\tLon: %s | %c\r\n", lat, lat_a, lon, lon_a);
-				  lat_gps = atof((char*)lat);
-				  lon_gps = atof((char*)lon);
+				  lat_gps = strtod((char*)lat, &conv);
+						  //atof((char*)lat);
+				  lon_gps = strtod((char*)lon, &conv);
+						  //atof((char*)lon);
 				  sprintf(lat, "%g", lat_gps);
 				  sprintf(lon, "%g", lon_gps);
+
 				  break;
 			  }
 
