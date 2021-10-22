@@ -1,0 +1,6 @@
+GPS.c:3:6:GPS_p	112	static
+GPS.c:49:8:min_to_degree	80	static
+GPS.c:68:8:get_lat_degree	16	static
+GPS.c:72:8:get_lon_degree	24	static
+GPS.c:76:8:get_alt	16	static
+GPS.c:79:6:get_GPS_time	48	static

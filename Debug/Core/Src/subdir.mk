@@ -5,6 +5,7 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/GPS.c \
 ../Core/Src/ILI9341_GFX.c \
 ../Core/Src/ILI9341_STM32_Driver.c \
 ../Core/Src/INA219.c \
@@ -17,6 +18,7 @@ C_SRCS += \
 ../Core/Src/system_stm32f4xx.c 
 
 OBJS += \
+./Core/Src/GPS.o \
 ./Core/Src/ILI9341_GFX.o \
 ./Core/Src/ILI9341_STM32_Driver.o \
 ./Core/Src/INA219.o \
@@ -29,6 +31,7 @@ OBJS += \
 ./Core/Src/system_stm32f4xx.o 
 
 C_DEPS += \
+./Core/Src/GPS.d \
 ./Core/Src/ILI9341_GFX.d \
 ./Core/Src/ILI9341_STM32_Driver.d \
 ./Core/Src/INA219.d \

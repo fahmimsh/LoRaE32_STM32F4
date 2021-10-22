@@ -33,6 +33,7 @@
 #include "retarget.h"
 #include "ILI9341_STM32_Driver.h"
 #include "ILI9341_GFX.h"
+#include "GPS.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -132,6 +133,18 @@ static void MX_SPI1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+long int tick = 29380;
+
+char printbuffer[300];
+
+bool printed;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  HAL_UART_Receive_IT(&huart3, Rx_data, RX_BUFFER_SIZE);
+  GPS.message=Rx_data;
+  update = true;
+}
 /**Fungsi ini digunakan untuk set timer jika dibutuhkan untuk set rtc
   */
 void set_time(void){
@@ -334,6 +347,17 @@ int main(void)
   ukuranstring = sprintf((char*)buff_s, "*A,latitude,longitude,data,jam,menit,detik,baterai\r\n");
   HAL_UART_Transmit(&huart2, buff_s, ukuranstring, 100);
   led_reaction(100, 600);
+
+  //GPS
+  HAL_UART_Receive_IT (&huart3, Rx_data, RX_BUFFER_SIZE);
+   uint8_t ubxcfgrate[] = { // UBX-CFG-RATE 10 Hz Measurement/Navigation
+
+   0xB5,0x62,0x06,0x08,0x06,0x00,
+
+   0x64,0x00,0x01,0x00,0x01,0x00, // Payload
+
+   0x7A,0x12 }; // Checksum
+   HAL_UART_Transmit(&huart1,(uint8_t *)ubxcfgrate,14,200);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -352,7 +376,48 @@ int main(void)
 	  getLCD(lat, lon, volt, amper, persen,gabungtanggal);
 //	  printf("%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun);
 //	  printf("%s", lat);
-	  get_gps();
+//	  get_gps();
+	  printf("%lf",GPS.lat);
+	   if(update){
+	  		  update=false;
+	  		  GPS_p();
+	  		  printed=false;
+	  	  }
+	  	  long int test;
+	      test = HAL_GetTick();                                                        //Hole Zeit von Systicktimer
+	      if(!((GPS.FIXTIME+1000) >test)){GPS.valid = false;}                          //Fix verfällt noch 1 sekunde
+
+	    if(GPS.valid&& !printed){
+//	    	printf("%d:%d:%d.%d \n %lf  %c\n %lf  %c\n", GPS.hours,GPS.mins,GPS.secs,GPS.millis,GPS.latitude,GPS.NS_ind, GPS.longitude,GPS.EW_ind);
+	    	sprintf(printbuffer,"%d:%d:%d.%d \n latitude:%lf NS_ind: %c\n longitude:%lf SE_ind: %c\nHDOP : %lf\nSats : %d\nAltitude:  %lf M\n", GPS.hour,GPS.min,GPS.sec,GPS.millis,GPS.lat,GPS.NS_ind, GPS.lon,GPS.EW_ind,GPS.hdop,GPS.sats,GPS.alt);
+	    	//HAL_UART_Transmit(&huart2,(uint8_t *)GPS.message,strlen(GPS.message),1000);
+	    	printf("%lf",GPS.lat);
+	    	HAL_UART_Transmit(&huart1,(uint8_t *) printbuffer,strlen(printbuffer),100);
+	        sprintf(printbuffer,"indexbegin: %d       indexend:  %d\nChecksum: 0x%x    Berechnete Checksum: 0x%x\n",GPS.index_begin,GPS.index_end,GPS.checksum,GPS.checksum_calc);
+	        HAL_UART_Transmit(&huart1,(uint8_t*) printbuffer,strlen(printbuffer),200);
+	        printed = true;
+	    	switch (GPS.fixtype){
+	        	case 0:
+	        	////printf("\n no fix\n");
+	       	 	break;
+	        	case 1:
+	        	////printf("\n 2D fix\n");
+	        	break;
+	        	case 2:
+	       		////printf("\n 3D fix\n");
+	        	break;
+	        default:
+	        	////printf ("ERROR\n");
+	        	HAL_Delay(100);
+	    	}
+
+	    }
+	    else{
+		    ////printf("NO VALID GPS DATA FOUND");
+		}
+
+
+
 //	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
   }
   /* USER CODE END 3 */
@@ -1004,7 +1069,7 @@ void led_reaction(uint16_t led_time, uint16_t time_loop){
   */
 void get_gps(){
 	if (usart_3_state == true){
-		//printf("%s", MainBuf_3);
+		printf("%s", MainBuf_3);
 //		printf("7.12122");
 //		printf("test");
 	  char *pointer; char *conv;
@@ -1045,7 +1110,7 @@ void get_gps(){
 			  for(int i = 1; i < (ptrend - ptrstart); i++) lon[i - 1] = ptrstart[i];
 			  lon_a = *(ptrend + 1);
 			  if(lon[0] != '\0' && lat[0] != '\0'){
-				  printf("Lat: %s | %c\tLon: %s | %c\r\n", lat, lat_a, lon, lon_a);
+//				  printf("Lat: %s | %c\tLon: %s | %c\r\n", lat, lat_a, lon, lon_a);
 				  lat_gps = strtod((char*)lat, &conv);
 						  //atof((char*)lat);
 				  lon_gps = strtod((char*)lon, &conv);

@@ -1,3 +1,4 @@
+"./Core/Src/GPS.o"
 "./Core/Src/ILI9341_GFX.o"
 "./Core/Src/ILI9341_STM32_Driver.o"
 "./Core/Src/INA219.o"
