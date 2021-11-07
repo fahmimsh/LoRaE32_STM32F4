@@ -70,6 +70,8 @@ DMA_HandleTypeDef hdma_usart3_rx;
 #define MainBuf_SIZE  1024
 uint8_t RxBuf[RxBuf_SIZE];
 uint8_t MainBuf[MainBuf_SIZE];
+bool usart_2_state = false;
+uint16_t ukuran_data;
 //serial 3
 uint8_t MainBuf_3[MainBuf_SIZE] = { 0 };
 uint8_t RxBuf_3[RxBuf_SIZE] = { 0 };
@@ -83,6 +85,7 @@ uint16_t oldPos = 0;
 uint16_t newPos = 0;
 uint16_t oldPos_3 = 0;
 uint16_t newPos_3 = 0;
+char node[5] = "A";
 //waktu millis second
 char jam, menit, detik;
 char tanggal, bulan, tahun;
@@ -91,6 +94,8 @@ unsigned long rtc_millis = 0;
 unsigned long ina219_millis = 0;
 unsigned long led_prev_on = 0;
 unsigned long led_loop_on = 0;
+unsigned long keypad_reset = 0;
+unsigned long keypad_millis = 0;
 //deklarasi Sensor Tegangan dan Arus
 float tegangan = 0.0;
 float Vshunt = 0.0;
@@ -106,11 +111,13 @@ uint8_t keyPressed_prev = 0;
 uint8_t counter = 0;
 char keypad = 0; char key[5] = {0};
 bool key_kondisi = false;
+int ikeypad = 0;
+char simpankeypad[100];
 //deklarasi LED
 bool led_hijau_kuning = 1;
 bool led_merah = 0;
 //deklarasi GPS
-double lon_gps, lat_gps;
+float lon_gps, lat_gps;
 char lat[20], lat_a, lon[20], lon_a;
 char data_lat[20], data_lng[20];
 //deklarasi LCD
@@ -134,17 +141,8 @@ static void MX_SPI1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 long int tick = 29380;
-
 char printbuffer[300];
-
 bool printed;
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-  HAL_UART_Receive_IT(&huart3, Rx_data, RX_BUFFER_SIZE);
-  GPS.message=Rx_data;
-  update = true;
-}
 /**Fungsi ini digunakan untuk set timer jika dibutuhkan untuk set rtc
   */
 void set_time(void){
@@ -191,33 +189,33 @@ void getLCD(char *data_lat,char *data_lng, char *volt, char *amper, char *persen
 		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
 		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
 	  }
-	  else if(atoi(persen) <= 60 && atoi(persen) >= 79)
+	  else if(atoi(persen) >= 60 && atoi(persen) <= 79)
 	  {
 		  ILI9341_DrawRectangle(200, 4, 8, 20, GREENYELLOW);
 		  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
 		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
 		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
 	  }
-	  else if(atoi(persen) <= 60 && atoi(persen) >= 79)
+	  else if(atoi(persen) >= 40 && atoi(persen) <= 59)
 	  {
 		  ILI9341_DrawRectangle(210, 4, 8, 20, GREENYELLOW);
 		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
 		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
 	  }
-	  else if(atoi(persen) <= 60 && atoi(persen) >= 79)
+	  else if(atoi(persen) >= 20 && atoi(persen) <= 39)
 	  {
 		  ILI9341_DrawRectangle(220, 4, 8, 20, GREENYELLOW);
 		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
 	  }
 	  else
 	  {
-		  ILI9341_DrawRectangle(230, 4, 8, 20, GREENYELLOW);
+		  ILI9341_DrawRectangle(230, 4, 8, 20, RED);
 	  }
 	  ILI9341_DrawVLine(237, 0, 320, DARKGREEN);
 	  ILI9341_DrawVLine(239, 0, 320, DARKGREEN);
 	  ILI9341_DrawHLine(0, 30, 240, DARKGREEN);
 	  ILI9341_DrawHLine(0, 32, 240, DARKGREEN);
-	  ILI9341_DrawText("ID NODE : A", FONT3, 9, 40, WHITE, BLACK);
+	  ILI9341_DrawText("ID NODE : D", FONT3, 9, 40, WHITE, BLACK);
 	  ILI9341_DrawText(volt, FONT3, 120, 40, WHITE, BLACK);
 	  ILI9341_DrawText(amper, FONT3, 180, 40, WHITE, BLACK);
 	  ILI9341_DrawHLine(0, 60, 240, DARKGREEN);
@@ -225,11 +223,11 @@ void getLCD(char *data_lat,char *data_lng, char *volt, char *amper, char *persen
 	  ILI9341_DrawText("Masukkan Pesan yang anda kirim : ", FONT2, 9, 70, WHITE, BLACK);
 	  ILI9341_DrawHLine(0, 85, 240, DARKGREEN);
 	  ILI9341_DrawHLine(0, 87, 240, DARKGREEN);
-	  ILI9341_DrawText("Ini Pesan Anda", FONT2, 9, 95, WHITE, BLACK);
+//	  ILI9341_DrawText("Ini Pesan Anda", FONT2, 9, 95, WHITE, BLACK);
 	  ILI9341_DrawHLine(0, 150, 240, DARKGREEN);
 	  ILI9341_DrawHLine(0, 152, 240, DARKGREEN);
 	  ILI9341_DrawText("Anda Menerima Pesan : ", FONT2, 9, 160, WHITE, BLACK);
-	  ILI9341_DrawText("Ini Pesan dia", FONT2, 9, 175, WHITE, BLACK);
+//	  ILI9341_DrawText("Ini Pesan dia", FONT2, 9, 175, WHITE, BLACK);
 	  ILI9341_DrawHLine(0, 245, 240, DARKGREEN);
 	  ILI9341_DrawHLine(0, 247, 240, DARKGREEN);
 	  ILI9341_DrawText("Lokasi   : ", FONT2, 9, 255, WHITE, BLACK);
@@ -279,8 +277,12 @@ void get_ampere_volt(void){
 	}
 }
 void get_keypad(uint8_t keypadin);
-void get_gps();
+void get_gps(void);
 void led_reaction(uint16_t led_time, uint16_t time_loop);
+void terimadata(void);
+void kirimdata(char *keypad);
+void remove_spaces(char* s);
+char* substr(const char *src, int m, int n);
 /* USER CODE END 0 */
 
 /**
@@ -344,20 +346,11 @@ int main(void)
   rtc_millis = HAL_GetTick();
   ina219_millis = HAL_GetTick();
   //kirim data dummy  *node,lat,long,data,jam, menit, detik, tegangan
-  ukuranstring = sprintf((char*)buff_s, "*A,latitude,longitude,data,jam,menit,detik,baterai\r\n");
-  HAL_UART_Transmit(&huart2, buff_s, ukuranstring, 100);
+//  ukuranstring = sprintf((char*)buff_s, "*A,latitude,longitude,data,jam,menit,detik,baterai\r\n");
+//  HAL_UART_Transmit(&huart2, buff_s, ukuranstring, 100);
+//  printf("Test");
   led_reaction(100, 600);
 
-  //GPS
-  HAL_UART_Receive_IT (&huart3, Rx_data, RX_BUFFER_SIZE);
-   uint8_t ubxcfgrate[] = { // UBX-CFG-RATE 10 Hz Measurement/Navigation
-
-   0xB5,0x62,0x06,0x08,0x06,0x00,
-
-   0x64,0x00,0x01,0x00,0x01,0x00, // Payload
-
-   0x7A,0x12 }; // Checksum
-   HAL_UART_Transmit(&huart1,(uint8_t *)ubxcfgrate,14,200);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -370,55 +363,15 @@ int main(void)
 	  get_time();
 	  get_keypad(keyPressed);
 	  get_ampere_volt();
-//	  jam, menit, detik,tanggal, bulan, 2000 + tahun
+	  terimadata();
 	  snprintf( gabungtanggal, 50, "%02d:%02d:%02d %02d-%02d-%2d",jam, menit, detik,tanggal, bulan, 2000 + tahun );
 //	  printf("%s\n", gabungtanggal);
 	  getLCD(lat, lon, volt, amper, persen,gabungtanggal);
 //	  printf("%02d:%02d:%02d || %02d-%02d-%2d\r\n",jam, menit, detik,tanggal, bulan, 2000 + tahun);
-//	  printf("%s", lat);
-//	  get_gps();
-	  printf("%lf",GPS.lat);
-	   if(update){
-	  		  update=false;
-	  		  GPS_p();
-	  		  printed=false;
-	  	  }
-	  	  long int test;
-	      test = HAL_GetTick();                                                        //Hole Zeit von Systicktimer
-	      if(!((GPS.FIXTIME+1000) >test)){GPS.valid = false;}                          //Fix verfällt noch 1 sekunde
-
-	    if(GPS.valid&& !printed){
-//	    	printf("%d:%d:%d.%d \n %lf  %c\n %lf  %c\n", GPS.hours,GPS.mins,GPS.secs,GPS.millis,GPS.latitude,GPS.NS_ind, GPS.longitude,GPS.EW_ind);
-	    	sprintf(printbuffer,"%d:%d:%d.%d \n latitude:%lf NS_ind: %c\n longitude:%lf SE_ind: %c\nHDOP : %lf\nSats : %d\nAltitude:  %lf M\n", GPS.hour,GPS.min,GPS.sec,GPS.millis,GPS.lat,GPS.NS_ind, GPS.lon,GPS.EW_ind,GPS.hdop,GPS.sats,GPS.alt);
-	    	//HAL_UART_Transmit(&huart2,(uint8_t *)GPS.message,strlen(GPS.message),1000);
-	    	printf("%lf",GPS.lat);
-	    	HAL_UART_Transmit(&huart1,(uint8_t *) printbuffer,strlen(printbuffer),100);
-	        sprintf(printbuffer,"indexbegin: %d       indexend:  %d\nChecksum: 0x%x    Berechnete Checksum: 0x%x\n",GPS.index_begin,GPS.index_end,GPS.checksum,GPS.checksum_calc);
-	        HAL_UART_Transmit(&huart1,(uint8_t*) printbuffer,strlen(printbuffer),200);
-	        printed = true;
-	    	switch (GPS.fixtype){
-	        	case 0:
-	        	////printf("\n no fix\n");
-	       	 	break;
-	        	case 1:
-	        	////printf("\n 2D fix\n");
-	        	break;
-	        	case 2:
-	       		////printf("\n 3D fix\n");
-	        	break;
-	        default:
-	        	////printf ("ERROR\n");
-	        	HAL_Delay(100);
-	    	}
-
-	    }
-	    else{
-		    ////printf("NO VALID GPS DATA FOUND");
-		}
-
-
-
-//	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
+	  get_gps();
+//	  ukuranstring = sprintf((char*)buff_s, "*A,latitude,longitude,data,jam,menit,detik,baterai\r\n");
+//	  HAL_UART_Transmit(&huart2, buff_s, ukuranstring, 100);
+//	  HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
@@ -808,7 +761,6 @@ static void MX_GPIO_Init(void)
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 	//variable parse
-	uint8_t new_Data[10];
 	//uint8_t prev_Data;
 	if (huart->Instance == USART2)
 	{
@@ -839,16 +791,10 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 		/* start the DMA again */
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *) RxBuf, RxBuf_SIZE);
 		__HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
-
-		if(RxBuf_3[0] == '*'){ //*node,lat,long,data,jam, menit, detik, tegangan
-			new_Data[0] = MainBuf[1];
-			if (new_Data[0]){
-				HAL_UART_Transmit(&huart2, MainBuf, Size, 100);
-			}
-			//prev_Data = new_Data[0];
-		}
-		printf("%s", MainBuf);
-		led_reaction(100, 600);
+//		printf("%s", RxBuf);
+//		HAL_UART_Transmit(&huart2, MainBuf, Size, 100);
+		ukuran_data = Size;
+		usart_2_state = true;
 	}else if(huart->Instance == USART3){
 		oldPos_3 = newPos_3;
 		if (oldPos_3+Size > MainBuf_SIZE)  // If the current position + new data size is greater than the main buffer
@@ -983,19 +929,50 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 /**Fungsi ini digunakan untuk mendapatkan karakter dari nilai keypad yangdigunakan
   */
 void get_keypad(uint8_t keypadin){
+	uint16_t pesan;
+	pesan = "Test";
+	char sementara;
+	int hitung;
 	if(key_kondisi == true){
-		if(keypadin != keyPressed_prev || counter >= 5){
+		if(keypadin != keyPressed_prev)
+		{
+			sementara = keypad;
+		}
+		if(counter >= 5 ){
 	  	  counter = 0;
 	    }
+		if(HAL_GetTick() - keypad_reset >= 500)
+		{
+			counter = 0;
+			sementara = keypad;
+		}
+		//printf("%d", keypadin);
 		if(keypadin == 1){
-			counter ++;
-			strcpy((uint8_t*)key, " 1abc");
-		     keypad = key[counter];
-		}else if(keypadin == 2){
-			counter ++;
-			strcpy((uint8_t*)key, " 2def");
-		     keypad = key[counter];
-		}else if(keypadin == 3){
+//			counter ++;
+//			strcpy((uint8_t*)key, " 1abc");
+//		     keypad = key[counter];
+//			ILI9341_FillScreen(BLACK);
+			ukuranstring = sprintf((char*)buff_s, "Hasil Tangkapan Nelayan 1kg\r\n");
+			ILI9341_DrawText("Hasil Tangkapan Nelayan 1kg", FONT2, 9, 95, WHITE, BLACK);
+		}
+		else if(keypadin == 2){
+//			ILI9341_FillScreen(BLACK);
+			ukuranstring = sprintf((char*)buff_s, "Hasil Tangkapan Nelayan 2kg\r\n");
+			ILI9341_DrawText("Hasil Tangkapan Nelayan 2kg", FONT2, 9, 95, WHITE, BLACK);
+		}
+		else if(keypadin == 3){
+//			ILI9341_FillScreen(BLACK);
+			ukuranstring = sprintf((char*)buff_s, "Hasil Tangkapan Nelayan 3kg\r\n");
+			ILI9341_DrawText("Hasil Tangkapan Nelayan 3kg", FONT2, 9, 95, WHITE, BLACK);
+		}
+		else if(keypadin == 12){
+//			counter ++;
+//			strcpy((uint8_t*)key, " 2def");
+//		     keypad = key[counter];
+			ILI9341_DrawFilledRectangleCoord(9, 95, 240, 150, BLACK);
+			HAL_UART_Transmit(&huart2, buff_s, ukuranstring, 100);
+			ukuranstring = sprintf((char*)buff_s, "\r\n");
+		}/*else if(keypadin == 3){
 			counter ++;
 			strcpy((uint8_t*)key, " 3ghi");
 		     keypad = key[counter];
@@ -1023,25 +1000,69 @@ void get_keypad(uint8_t keypadin){
 			counter ++;
 			strcpy((uint8_t*)key, " 4yz");
 		     keypad = key[counter];
-		}else if(keypadin == 11){
-			counter = 0;
-			strcpy((uint8_t*)key, "D"); //delete
-		     keypad = key[counter];
-		}else if(keypadin == 12){
+		}
+		else if(keypadin == 12){
 			counter = 0;
 			strcpy((uint8_t*)key, "O"); //oke / KIRIM
 		     keypad = key[counter];
 		}else if(keypadin == 13){
 			counter = 0;
-			strcpy((uint8_t*)key, " "); //spasi
+			strcpy((uint8_t*)key, "_"); //spasi
 		     keypad = key[counter];
+		}*/
+		/*printf("key %c\r\n", keypad);
+		if(sementara == '_')
+		{
+			sementara = ' ';
 		}
-		printf("key %c\r\n", keypad);
+		else
+		{
+			remove_spaces(simpankeypad);
+		}
+		strncat(simpankeypad, &sementara, 1);
+		printf("Gabungan : %s\n", simpankeypad);
+		ILI9341_DrawText(simpankeypad, FONT2, 9, 95, WHITE, BLACK);
+		hitung = (strlen(simpankeypad)-1);
+		if(keypadin == 11)
+		{
+			simpankeypad[hitung - 1] = '\0';
+			ILI9341_DrawFilledRectangleCoord(9, 95, 240, 150, BLACK);
+			ILI9341_DrawText(simpankeypad, FONT2, 9, 95, WHITE, BLACK);
+		}
+//		kirimdata(&simpankeypad);
+//		kirimdata(&keypad);
 		keyPressed_prev = keypadin;
 		key_kondisi = false;
 		led_reaction(100,100);
+		keypad_reset = HAL_GetTick();
+		keypad_millis = HAL_GetTick();*/
 	  }
 }
+
+void remove_spaces(char* s) {
+    char* d = s;
+    do {
+        while (*d == ' ') {
+            ++d;
+        }
+    } while (*s++ = *d++);
+}
+
+char* substr(const char *src, int m, int n)
+{
+    // get the length of the destination string
+    int len = n - m;
+
+    // allocate (len + 1) chars for destination (+1 for extra null character)
+    char *dest = (char*)malloc(sizeof(char) * (len + 1));
+
+    // start with m'th char and copy `len` chars into the destination
+    strncpy(dest, (src + m), len);
+
+    // return the destination string
+    return dest;
+}
+
 /**Fungsi ini LED Blink untuk indikasi
   */
 void led_reaction(uint16_t led_time, uint16_t time_loop){
@@ -1069,7 +1090,7 @@ void led_reaction(uint16_t led_time, uint16_t time_loop){
   */
 void get_gps(){
 	if (usart_3_state == true){
-		printf("%s", MainBuf_3);
+//		printf("%s", MainBuf_3);
 //		printf("7.12122");
 //		printf("test");
 	  char *pointer; char *conv;
@@ -1112,11 +1133,13 @@ void get_gps(){
 			  if(lon[0] != '\0' && lat[0] != '\0'){
 //				  printf("Lat: %s | %c\tLon: %s | %c\r\n", lat, lat_a, lon, lon_a);
 				  lat_gps = strtod((char*)lat, &conv);
-						  //atof((char*)lat);
+//				  lat_gps = atof((char*)lat);
 				  lon_gps = strtod((char*)lon, &conv);
-						  //atof((char*)lon);
-				  sprintf(lat, "%g", lat_gps);
-				  sprintf(lon, "%g", lon_gps);
+//				  lon_gps = atof((char*)lon);
+				  sprintf(lat, "%.7f", (lat_gps * -0.01) - 0.1167);
+				  sprintf(lon, "%.7f", (lon_gps * 0.01) + 0.316);
+
+				  printf("%s %s\n\r",lat, lon);
 
 				  break;
 			  }
@@ -1132,6 +1155,51 @@ void get_gps(){
 				  sprintf(lon, "%g", 122.32312);
 			  }
 }
+/**Fungsi ini untuk terima data dari LoRa Lainnya
+  */
+void terimadata(void){
+	if(usart_2_state == true){
+		usart_2_state = false;
+		if(RxBuf[0] == '*'){ //*node,lat,long,data,jam, menit, detik, tegangan
+			if(RxBuf[1] != *node)
+			{
+				HAL_UART_Transmit(&huart2, RxBuf, ukuran_data, 100);
+//				printf("Terparsing");
+			}
+			else
+			{
+				printf("Tidak Mengirimkan");
+			}
+
+		}
+		else
+		{
+			printf("Tidak\n");
+		}
+		ILI9341_DrawText(RxBuf, FONT2, 9, 175, WHITE, BLACK);
+		printf("%s", RxBuf);
+		led_reaction(100, 600);
+	}
+}
+/**Fungsi ini kirim
+  */
+void kirimdata(char *keypad){
+	printf("%s\r\n", keypad);
+	if(HAL_GetTick() - keypad_millis >= 1000)
+	{
+		strncat(simpankeypad, keypad, 1);
+	}
+		printf("%s\n", simpankeypad);
+
+		/*else if(keypad == "O")
+		{
+	//		printf("")
+		}
+		simpankeypad[ikeypad] = keypad;
+		printf("%s\r\n", simpankeypad);*/
+//		simpankeypad[ikeypad] = keypad;
+}
+
 /* USER CODE END 4 */
 
 /**
